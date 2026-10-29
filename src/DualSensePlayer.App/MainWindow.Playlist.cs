@@ -240,7 +240,7 @@ public partial class MainWindow
         public int Number { get => _number; set { _number = value; Changed(); } }
         public string[] Warnings { get; set; } = [];
         public string Label => $"{Number:00}.  {Path.GetFileName(Settings.Path)}  ·  {(Info is null ? "未検査" : TimeSpan.FromSeconds(Info.Duration).ToString(@"mm\:ss"))}" +
-            (Settings.AudioStreamIndex < 0 ? "  · トラック選択待ち" : Settings.MappingConfirmed ? "  · ch確認済み" : "  · ch未確認");
+            (Settings.AudioStreamIndex < 0 ? "  · トラック選択待ち" : Settings.MappingConfirmed ? "  · 自動再生の確認済み" : "  · 手動再生可／自動再生の確認待ち");
         public event PropertyChangedEventHandler? PropertyChanged;
         private void Changed() => PropertyChanged?.Invoke(this, new(nameof(Label)));
     }

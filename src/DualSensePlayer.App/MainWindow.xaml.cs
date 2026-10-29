@@ -59,7 +59,7 @@ public partial class MainWindow : Window
                 await InspectEntriesAsync();
                 await PrepareAsync();
                 if (_settings.AutoPlay && !_settings.ExhibitionStopped && _settings.Playlist.All(item => item.MappingConfirmed)) await PlayAsync();
-                else if (_settings.AutoPlay && _settings.Playlist.Any(item => !item.MappingConfirmed)) Warning.Text = "自動再生には全動画のch対応確認が必要です。各動画を手動で再生して確認してください。";
+                else if (_settings.AutoPlay && _settings.Playlist.Any(item => !item.MappingConfirmed)) Warning.Text = "自動再生を待機しています。「再生 / 再開」で手動再生できます。各chの出力を確認後、自動再生用の確認済みを保存してください。";
             }
         });
         _log.Write("startup", new { version = typeof(MainWindow).Assembly.GetName().Version?.ToString(), os = Environment.OSVersion.ToString(), supervised = args.Contains("--supervised") });
@@ -80,6 +80,7 @@ public partial class MainWindow : Window
     private async Task RunUiAsync(Func<Task> action)
     {
         if (_busy || _exiting) return;
+        Warning.Text = "";
         _busy = true; RefreshState();
         using var operation = new CancellationTokenSource();
         _operationStop = operation;
@@ -91,23 +92,24 @@ public partial class MainWindow : Window
 
     private async Task RefreshDevicesAsync()
     {
-        var devices = await Task.Run(DeviceCatalog.Enumerate);
+        var devices = await Task.Run(() => DeviceCatalog.Enumerate(_log));
+        _log.Write("devices-discovered", devices);
         _updating = true;
         try
         {
-            var none = new AudioDevice("", "未使用", "", 0, 0, null);
+            var none = new AudioDevice("", "未使用（出力先を選択してください）", "", 0, 0, null);
             AudioCombo.ItemsSource = new[] { none }.Concat(devices.Where(d => d.Hid is null)).ToArray();
             RestoreDeviceSelection(AudioCombo, _settings.Machine.Audio);
             foreach (var pair in new[] { (Controller1, 0), (Controller2, 1) })
             {
-                pair.Item1.ItemsSource = new[] { none }.Concat(devices.Where(d => d.Hid is not null)).ToArray();
+                pair.Item1.ItemsSource = new[] { none }.Concat(devices.Where(d => d.CanSendHaptics)).ToArray();
                 RestoreDeviceSelection(pair.Item1, _settings.Machine.Controllers[pair.Item2]);
             }
             var monitors = DisplaySupport.Enumerate();
             MonitorCombo.ItemsSource = monitors;
             MonitorCombo.SelectedItem = monitors.FirstOrDefault(m => m.Id == _settings.Machine.MonitorId);
             if (_settings.Machine.MonitorId.Length == 0 && monitors.Length > 0) MonitorCombo.SelectedIndex = monitors.Length > 1 ? 1 : 0;
-            OperationStatus.Text = $"通常音声 {devices.Count(d => d.Hid is null)}出力、USB DualSense {devices.Count(d => d.Hid is not null)}台、ディスプレイ {monitors.Length}台。登録されていない機器は自動利用しません。";
+            OperationStatus.Text = $"USB DualSense検出 {devices.Count(d => d.Hid is not null)}台、コントローラー用の音声出力候補 {devices.Count(d => d.CanSendHaptics)}件、ディスプレイ {monitors.Length}台。画面上部で使用する出力先を選択してください。";
         }
         finally { _updating = false; }
     }
@@ -192,7 +194,11 @@ public partial class MainWindow : Window
         _operationStop?.Token.ThrowIfCancellationRequested();
         Persist(_settings, exhibitionStop: false);
         DisplaySupport.KeepAwake(true); _fault = "";
-        if (_settings.Playlist.Any(item => !item.MappingConfirmed)) Warning.Text = "ch対応が未確認の動画があります。各動画の4経路を確認し、停止後に確認済みを保存してください。";
+        if (_settings.Machine.Controllers.All(controller => controller.EndpointId.Length == 0))
+        {
+            Warning.Text = "動画を再生していますが、振動の出力先が未選択です。停止して、画面上部の「DualSense 1」で音声出力を選択してください。";
+            ShowManagement();
+        }
         var staff = DisplaySupport.Enumerate().FirstOrDefault(d => d.Id != display.Id);
         if (staff is not null)
         {
@@ -201,7 +207,7 @@ public partial class MainWindow : Window
             Left = staff.X / dpi.DpiScaleX + 20; Top = staff.Y / dpi.DpiScaleY + 20;
             Topmost = true; Activate();
         }
-        else Hide();
+        else if (_settings.Machine.Controllers.Any(controller => controller.EndpointId.Length > 0)) Hide();
     }
 
     private async Task StopAsync(bool intentional)
@@ -274,19 +280,31 @@ public partial class MainWindow : Window
         if (!_seekPending && !PositionSlider.IsMouseCaptureWithin && !PositionSlider.IsKeyboardFocusWithin) PositionSlider.Value = position % duration;
         if (!_busy) Status.Text = _fault.Length > 0 ? _fault : state switch { PlaybackState.Playing => "展示運転中", PlaybackState.Paused => "一時停止中", _ => "停止中 — 素材と機器を設定できます" };
         HapticsStopButton.Content = _settings.HapticsStopped ? "振動全停止中（保存済み）" : "振動全停止";
-        AudioStatus.Text = _engine.OutputStatus[0]; ControllerStatus1.Text = _engine.OutputStatus[1]; ControllerStatus2.Text = _engine.OutputStatus[2];
-        Meter1.Text = $"L {_engine.Meter(1, false):0.000}  /  R {_engine.Meter(1, true):0.000}";
-        Meter2.Text = $"L {_engine.Meter(2, false):0.000}  /  R {_engine.Meter(2, true):0.000}";
+        AudioStatus.Text = DescribeOutputSelection(AudioCombo, 0);
+        ControllerStatus1.Text = DescribeOutputSelection(Controller1, 1); ControllerStatus2.Text = DescribeOutputSelection(Controller2, 2);
+        Meter1.Text = $"送信 ch3 {_engine.Meter(1, false):0.000} / ch4 {_engine.Meter(1, true):0.000}";
+        Meter2.Text = $"送信 ch3 {_engine.Meter(2, false):0.000} / ch4 {_engine.Meter(2, true):0.000}";
         var editable = state == PlaybackState.Stopped && !_busy;
         foreach (var control in new UIElement[] { BrowseButton, TrackCombo, MappingPanel, MappingConfirmed, PrepareButton, MonitorCombo, AudioCombo, AudioOffset, AudioExclusive,
             Controller1, Controller2, Offset1, Offset2, Exclusive1, Exclusive2, RefreshButton, Test1L, Test1R, Test2L, Test2R, AutoPlay, LoginStartup, SaveButton,
             PlaylistList, FolderButton, MoveUpButton, MoveDownButton, RemoveButton, PlaySelectedButton }) control.IsEnabled = editable;
-        TrackCombo.IsEnabled = MappingPanel.IsEnabled = MappingConfirmed.IsEnabled = editable && _editing?.Info is not null;
+        TrackCombo.IsEnabled = MappingPanel.IsEnabled = MappingConfirmed.IsEnabled = DirectChannelsButton.IsEnabled = editable && _editing?.Info is not null;
         MoveUpButton.IsEnabled = editable && PlaylistList.SelectedIndex > 0;
         MoveDownButton.IsEnabled = editable && PlaylistList.SelectedIndex >= 0 && PlaylistList.SelectedIndex < _entries.Count - 1;
         RemoveButton.IsEnabled = PlaySelectedButton.IsEnabled = editable && PlaylistList.SelectedIndex >= 0;
         PlayButton.IsEnabled = !_busy;
         Title = $"DualSense 展示プレーヤー — 稼働 {TimeSpan.FromSeconds(PlaybackClock.QpcSeconds - _started):hh\\:mm\\:ss}";
+    }
+
+    private string DescribeOutputSelection(ComboBox combo, int output)
+    {
+        if (combo.SelectedItem is AudioDevice device)
+        {
+            if (device.Id.Length == 0) return "出力先が未選択です。上の一覧で音声デバイスを選択してください。";
+            var registered = output == 0 ? _settings.Machine.Audio : _settings.Machine.Controllers[output - 1];
+            if (device.Id != registered.EndpointId) return "選択済み · 再生または左右テストでこの出力先を使用します。";
+        }
+        return _engine.DescribeOutput(output);
     }
 
     private void WriteHeartbeat(bool normalExit) => SettingsStore.AtomicWrite(_heartbeatPath, JsonSerializer.Serialize(new Heartbeat(
@@ -326,9 +344,27 @@ public partial class MainWindow : Window
     private void DescribeTrack()
     {
         TrackDescription.Text = TrackCombo.SelectedItem is AudioTrack track ? $"デコード順: {track.DecodedOrder}\n音声PTS {track.Start:0.######}秒 / 音声尺 {track.Duration:0.###}秒。レイアウトから用途を推測して並べ替えません。" : "4chトラックが複数ある場合は対象を選択してください。";
+        DescribeRoute();
+    }
+    private void DescribeRoute()
+    {
+        if (RouteDescription is null || Map3 is null || Map4 is null) return;
+        RouteDescription.Text = Map3.SelectedIndex >= 0 && Map4.SelectedIndex >= 0
+            ? $"動画ch{Map3.SelectedIndex + 1} → DualSense ch3（左）、動画ch{Map4.SelectedIndex + 1} → DualSense ch4（右）。DualSense ch1/2は無音です。"
+            : "一覧から動画を選択してください。";
+    }
+    private void OnUseDirectChannels(object sender, RoutedEventArgs e)
+    {
+        var maps = new[] { Map1, Map2, Map3, Map4 };
+        for (var i = 0; i < maps.Length; i++) maps[i].SelectedIndex = i;
+        SaveEntryEditor(); ReindexPlaylist(); DescribeRoute();
     }
     private void OnTrackChanged(object sender, SelectionChangedEventArgs e) { if (_updating) return; MappingConfirmed.IsChecked = false; DescribeTrack(); }
-    private void OnMapChanged(object sender, SelectionChangedEventArgs e) { if (!_updating && MappingConfirmed is not null) MappingConfirmed.IsChecked = false; }
+    private void OnMapChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_updating && MappingConfirmed is not null) MappingConfirmed.IsChecked = false;
+        DescribeRoute();
+    }
     private void OnLiveChanged(object sender, RoutedEventArgs e)
     {
         if (_updating) return;

@@ -22,8 +22,20 @@ public sealed class PlayerEngine(FfmpegTools tools, DiagnosticLog log) : IAsyncD
     public PlaylistVideoDecoder? Video { get; private set; }
     public long Progress => Interlocked.Read(ref _progress);
     public bool OutputStopPending => Volatile.Read(ref _outputStopPending);
-    public string[] OutputStatus { get; } = ["未登録", "未登録", "未登録"];
+    public string[] OutputStatus { get; } = ["停止中", "停止中", "停止中"];
     public float Meter(int output, bool right) => right ? _sinks[output]?.RightPeak ?? 0 : _sinks[output]?.LeftPeak ?? 0;
+
+    public string DescribeOutput(int index)
+    {
+        var settings = Volatile.Read(ref _settings);
+        var output = index == 0 ? settings.Machine.Audio : settings.Machine.Controllers[index - 1];
+        if (output.EndpointId.Length == 0) return "出力先が未選択です。上の一覧で音声デバイスを選択してください。";
+        var status = OutputStatus[index];
+        if (index > 0 && settings.HapticsStopped) return "振動全停止中 · 「振動全停止を解除」で再開できます。 " + status;
+        if (output.Muted) return "ミュート中 · チェックを外すと出力します。 " + status;
+        if (output.Gain == 0) return "強度・音量が0%です。 " + status;
+        return status;
+    }
 
     public void UpdateSettings(PlayerSettings settings)
     {
@@ -171,15 +183,15 @@ public sealed class PlayerEngine(FfmpegTools tools, DiagnosticLog log) : IAsyncD
             try
             {
                 OutputStatus[index] = "接続待機";
-                var device = DeviceCatalog.Match(registered, DeviceCatalog.Enumerate(), index > 0)
+                var device = DeviceCatalog.Match(registered, DeviceCatalog.Enumerate(log), index > 0)
                     ?? throw new IOException("登録機器が見つかりません。");
-                if (index > 0) DeviceCatalog.InitializeHaptics(device.Hid!);
+                var mode = index > 0 ? DeviceCatalog.PrepareHaptics(device, log) : "通常音声";
                 sink = new(device, registered, Playlist!.Pcm, Clock, () => Volatile.Read(ref _routing)[index],
                     index > 0 ? _settings.ReconnectFadeMs : 0, log, () => { });
                 _sinks[index] = sink;
                 await sink.Ready.WaitAsync(TimeSpan.FromSeconds(5), token);
-                OutputStatus[index] = "ストリーム稼働中 · " + sink.FormatDescription;
-                log.Write("output-reconnected", new { index, device.Id });
+                OutputStatus[index] = "送信中 · " + mode + " · " + sink.FormatDescription;
+                log.Write("output-reconnected", new { index, device.Id, device.Name, mode, registered.Gain, registered.Muted });
                 attempts = 0;
                 await sink.Completion.WaitAsync(token);
             }
@@ -221,9 +233,9 @@ public sealed class PlayerEngine(FfmpegTools tools, DiagnosticLog log) : IAsyncD
             if (Clock.Snapshot.State != PlaybackState.Stopped) throw new InvalidOperationException("左右テストは停止中に行ってください。");
             if (_settings.HapticsStopped) throw new InvalidOperationException("振動全停止を明示解除してからテストしてください。");
             var registered = _settings.Machine.Controllers[slot];
-            var device = await Task.Run(() => DeviceCatalog.Match(registered, DeviceCatalog.Enumerate(), true))
-                ?? throw new IOException("登録したDualSenseが見つかりません。");
-            await Task.Run(() => DeviceCatalog.InitializeHaptics(device.Hid!));
+            var device = await Task.Run(() => DeviceCatalog.Match(registered, DeviceCatalog.Enumerate(log), true))
+                ?? throw new IOException("DualSenseの出力先を選択してください。接続済みの場合は「機器を再検出」を押してください。");
+            var mode = await Task.Run(() => DeviceCatalog.PrepareHaptics(device, log));
             var samples = new float[48000 * 4];
             for (var i = 0; i < 38400; i++) samples[i * 4 + (right ? 3 : 2)] = (float)(.5 * Math.Sin(2 * Math.PI * 110 * i / 48000) * Math.Clamp(Math.Min(i, 38400 - i) / 960d, 0, 1));
             var clock = new PlaybackClock(); clock.Play(.1);
@@ -233,7 +245,7 @@ public sealed class PlayerEngine(FfmpegTools tools, DiagnosticLog log) : IAsyncD
             await sink.Ready.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             await Task.Delay(1000, cancellationToken);
             if (sink.Completion.IsFaulted) await sink.Completion;
-            log.Write("grip-test", new { slot, right });
+            log.Write("grip-test", new { slot, right, device.Id, device.Name, mode, registered.Gain, registered.Muted });
         }
         finally { _testSink = null; _commands.Release(); }
     }

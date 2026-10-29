@@ -8,18 +8,18 @@ using DualSensePlayer.Core;
 
 namespace DualSensePlayer.Windows;
 
-public sealed record HidDevice(string Path, string ContainerId, string Serial);
-public sealed record AudioDevice(string Id, string Name, string ContainerId, int Channels, int Rate, HidDevice? Hid)
-{
-    public override string ToString() => $"{Name} · {Channels}ch/{Rate}Hz · {ContainerId[..Math.Min(ContainerId.Length, 8)]}";
-}
-
 public static class DeviceCatalog
 {
     private static readonly PropertyKey ContainerKey = new(new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"), 2);
-    public static AudioDevice[] Enumerate()
+    public static AudioDevice[] Enumerate(DiagnosticLog? log = null)
     {
-        var hid = HidNative.Enumerate();
+        HidDevice[] hid;
+        try { hid = HidNative.Enumerate(); }
+        catch (Win32Exception ex)
+        {
+            hid = [];
+            log?.Write("hid-discovery-warning", ex.ToString());
+        }
         var devices = new List<AudioDevice>();
         using var enumerator = new MMDeviceEnumerator();
         foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
@@ -28,7 +28,9 @@ public static class DeviceCatalog
             {
                 try
                 {
-                    var container = device.Properties.Contains(ContainerKey) ? device.Properties[ContainerKey].Value?.ToString() ?? "" : "";
+                    var container = "";
+                    try { container = device.Properties.Contains(ContainerKey) ? device.Properties[ContainerKey].Value?.ToString() ?? "" : ""; }
+                    catch (COMException ex) { log?.Write("endpoint-identity-warning", new { device.ID, reason = ex.Message }); }
                     container = Guid.TryParse(container, out var guid) ? guid.ToString("D") : "";
                     using var client = device.AudioClient;
                     var format = client.MixFormat;
@@ -43,13 +45,19 @@ public static class DeviceCatalog
     }
 
     public static AudioDevice? Match(OutputSettings registered, IEnumerable<AudioDevice> devices, bool controller)
+        => OutputDeviceSelection.Match(registered, devices, controller);
+
+    public static string PrepareHaptics(AudioDevice device, DiagnosticLog log)
     {
-        if (registered.EndpointId.Length == 0) return null;
-        if (!controller) return devices.SingleOrDefault(d => d.Id == registered.EndpointId && d.Hid is null);
-        if (registered.ContainerId.Length == 0) return null;
-        var candidates = devices.Where(d => d.Hid is not null && d.ContainerId == registered.ContainerId &&
-            (registered.Serial.Length == 0 || d.Hid.Serial == registered.Serial)).ToArray();
-        return candidates.Length == 1 ? candidates[0] : null;
+        if (!device.CanSendHaptics) throw new InvalidDataException("48kHz・4chのコントローラー音声出力を選択してください。");
+        if (device.Hid is null) return "4ch音声出力";
+        try { InitializeHaptics(device.Hid); return "USB音声出力"; }
+        catch (Exception ex) when (ex is IOException or Win32Exception or UnauthorizedAccessException or OperationCanceledException)
+        {
+            // Windows media players do not require a writable HID handle to send USB audio.
+            log.Write("hid-initialize-warning", new { device.Id, reason = ex.ToString() });
+            return "4ch音声出力（制御初期化の警告は診断ログを参照）";
+        }
     }
 
     public static void InitializeHaptics(HidDevice device)

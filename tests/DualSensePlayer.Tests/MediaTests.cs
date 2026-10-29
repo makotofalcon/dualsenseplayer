@@ -28,6 +28,18 @@ public sealed class MediaTests : IAsyncLifetime
         Assert.Equal(64, prepared.Hash.Length);
     }
 
+    [Fact] public async Task DefaultUnconfirmedMappingSendsOnlyVideoChannelsThreeAndFourToControllers()
+    {
+        var settings = new MediaSettings { Path = _pcm };
+        Assert.False(settings.MappingConfirmed);
+        var info = await _tools.InspectAsync(settings.Path);
+        var prepared = await _tools.PrepareAsync(info, info.AudioTracks.Single().Index, settings.ChannelMap);
+        var output = new float[4];
+        prepared.Pcm.Render(output, 4, .1, 1d / 48000, new(OutputKind.Haptics, 1, false, 0));
+        Assert.Equal(0, output[0]); Assert.Equal(0, output[1]);
+        Assert.Equal(.3, output[2], 3); Assert.Equal(-.4, output[3], 3);
+    }
+
     [Fact] public async Task AudioPtsGapIsSilenceInsteadOfMovingAudioToZero()
     {
         var path = Path.Combine(_directory, "delayed.mov");

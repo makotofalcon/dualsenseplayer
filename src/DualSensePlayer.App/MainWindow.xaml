@@ -25,6 +25,31 @@
     </StackPanel>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel>
+        <DockPanel Margin="0,8">
+          <Button x:Name="RefreshButton" Content="機器を再検出" DockPanel.Dock="Right" Click="OnRefresh" />
+          <TextBlock Text="コントローラー出力 — 動画のch3/4を送信" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </DockPanel>
+        <TextBlock Text="Windowsプレーヤーで振動した「Wireless Controller」などの4ch音声出力を選択してください。1台の場合はDualSense 1だけ設定します。" TextWrapping="Wrap" />
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <GroupBox Header="DualSense 1" Margin="0,8,8,8"><StackPanel>
+            <ComboBox x:Name="Controller1" />
+            <WrapPanel><TextBlock Text="強度" VerticalAlignment="Center" /><Slider x:Name="Gain1" Width="170" Minimum="0" Maximum="100" Value="25" ValueChanged="OnLiveChanged" /><TextBlock Text="{Binding ElementName=Gain1, Path=Value, StringFormat={}{0:0}%}" Width="45" VerticalAlignment="Center" /><CheckBox x:Name="Mute1" Content="ミュート" Click="OnLiveChanged" /></WrapPanel>
+            <WrapPanel><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="Offset1" Width="65" Text="0" /><CheckBox x:Name="Exclusive1" Content="排他" /></WrapPanel>
+            <WrapPanel><Button x:Name="Test1L" Content="左テスト（ch3）" Tag="0L" Click="OnTest" /><Button x:Name="Test1R" Content="右テスト（ch4）" Tag="0R" Click="OnTest" /></WrapPanel>
+            <TextBlock x:Name="ControllerStatus1" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock x:Name="Meter1" Text="送信 ch3 0.000 / ch4 0.000" FontFamily="Consolas" />
+          </StackPanel></GroupBox>
+          <GroupBox Grid.Column="1" Header="DualSense 2" Margin="8,8,0,8"><StackPanel>
+            <ComboBox x:Name="Controller2" />
+            <WrapPanel><TextBlock Text="強度" VerticalAlignment="Center" /><Slider x:Name="Gain2" Width="170" Minimum="0" Maximum="100" Value="25" ValueChanged="OnLiveChanged" /><TextBlock Text="{Binding ElementName=Gain2, Path=Value, StringFormat={}{0:0}%}" Width="45" VerticalAlignment="Center" /><CheckBox x:Name="Mute2" Content="ミュート" Click="OnLiveChanged" /></WrapPanel>
+            <WrapPanel><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="Offset2" Width="65" Text="0" /><CheckBox x:Name="Exclusive2" Content="排他" /></WrapPanel>
+            <WrapPanel><Button x:Name="Test2L" Content="左テスト（ch3）" Tag="1L" Click="OnTest" /><Button x:Name="Test2R" Content="右テスト（ch4）" Tag="1R" Click="OnTest" /></WrapPanel>
+            <TextBlock x:Name="ControllerStatus2" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock x:Name="Meter2" Text="送信 ch3 0.000 / ch4 0.000" FontFamily="Consolas" />
+          </StackPanel></GroupBox>
+        </Grid>
+        <TextBlock Text="初回は1台ずつ選択し、左右テストで確認してください。メーターはアプリから送る信号の大きさです。実際の振動を検出するものではありません。" TextWrapping="Wrap" FontSize="12" Foreground="#586778" />
         <GroupBox Header="プレイリスト — 上から順に再生し、最後から先頭へ戻ります">
           <StackPanel>
             <WrapPanel>
@@ -55,38 +80,21 @@
               <TextBlock Text="振動L ←" VerticalAlignment="Center" /><ComboBox x:Name="Map3" Width="55" SelectionChanged="OnMapChanged" />
               <TextBlock Text="振動R ←" VerticalAlignment="Center" /><ComboBox x:Name="Map4" Width="55" SelectionChanged="OnMapChanged" />
             </WrapPanel>
-            <CheckBox x:Name="MappingConfirmed" Content="4ch試験動画で実際のチャンネル順を確認済み" />
+            <Button x:Name="DirectChannelsButton" Content="動画ch3/4を振動に使う（標準のch対応に戻す）" HorizontalAlignment="Left" Click="OnUseDirectChannels" />
+            <TextBlock x:Name="RouteDescription" TextWrapping="Wrap" Margin="0,5" />
+            <CheckBox x:Name="MappingConfirmed" Content="自動再生用：各chの出力を実機で確認済み" />
+            <TextBlock Text="確認前でも「再生 / 再開」で選択したchを送信します。このチェックは起動時の自動再生に使います。" TextWrapping="Wrap" FontSize="12" Foreground="#586778" />
             <TextBlock x:Name="ValidationText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
           </StackPanel>
         </GroupBox>
         <GroupBox Header="映像と通常音声">
           <StackPanel>
-            <DockPanel><Button x:Name="RefreshButton" Content="機器を再検出" DockPanel.Dock="Right" Click="OnRefresh" /><ComboBox x:Name="MonitorCombo" /></DockPanel>
+            <ComboBox x:Name="MonitorCombo" />
             <ComboBox x:Name="AudioCombo" />
-            <WrapPanel><TextBlock Text="音量" VerticalAlignment="Center" /><Slider x:Name="Volume" Width="220" ValueChanged="OnLiveChanged" /><CheckBox x:Name="AudioMute" Content="ミュート" Click="OnLiveChanged" /><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="AudioOffset" Width="65" Text="0" /><CheckBox x:Name="AudioExclusive" Content="排他" /></WrapPanel>
+            <WrapPanel><TextBlock Text="音量" VerticalAlignment="Center" /><Slider x:Name="Volume" Width="220" Minimum="0" Maximum="100" ValueChanged="OnLiveChanged" /><TextBlock Text="{Binding ElementName=Volume, Path=Value, StringFormat={}{0:0}%}" Width="45" VerticalAlignment="Center" /><CheckBox x:Name="AudioMute" Content="ミュート" Click="OnLiveChanged" /><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="AudioOffset" Width="65" Text="0" /><CheckBox x:Name="AudioExclusive" Content="排他" /></WrapPanel>
             <TextBlock x:Name="AudioStatus" TextWrapping="Wrap" FontSize="12" />
           </StackPanel>
         </GroupBox>
-        <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <GroupBox Header="DualSense 1" Margin="0,8,8,8"><StackPanel>
-            <ComboBox x:Name="Controller1" />
-            <WrapPanel><TextBlock Text="強度 %" VerticalAlignment="Center" /><Slider x:Name="Gain1" Width="170" Value="25" ValueChanged="OnLiveChanged" /><CheckBox x:Name="Mute1" Content="ミュート" Click="OnLiveChanged" /></WrapPanel>
-            <WrapPanel><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="Offset1" Width="65" Text="0" /><CheckBox x:Name="Exclusive1" Content="排他" /></WrapPanel>
-            <WrapPanel><Button x:Name="Test1L" Content="左テスト" Tag="0L" Click="OnTest" /><Button x:Name="Test1R" Content="右テスト" Tag="0R" Click="OnTest" /></WrapPanel>
-            <TextBlock x:Name="ControllerStatus1" TextWrapping="Wrap" FontSize="12" />
-            <TextBlock x:Name="Meter1" Text="L 0.000  /  R 0.000" FontFamily="Consolas" />
-          </StackPanel></GroupBox>
-          <GroupBox Grid.Column="1" Header="DualSense 2" Margin="8,8,0,8"><StackPanel>
-            <ComboBox x:Name="Controller2" />
-            <WrapPanel><TextBlock Text="強度 %" VerticalAlignment="Center" /><Slider x:Name="Gain2" Width="170" Value="25" ValueChanged="OnLiveChanged" /><CheckBox x:Name="Mute2" Content="ミュート" Click="OnLiveChanged" /></WrapPanel>
-            <WrapPanel><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="Offset2" Width="65" Text="0" /><CheckBox x:Name="Exclusive2" Content="排他" /></WrapPanel>
-            <WrapPanel><Button x:Name="Test2L" Content="左テスト" Tag="1L" Click="OnTest" /><Button x:Name="Test2R" Content="右テスト" Tag="1R" Click="OnTest" /></WrapPanel>
-            <TextBlock x:Name="ControllerStatus2" TextWrapping="Wrap" FontSize="12" />
-            <TextBlock x:Name="Meter2" Text="L 0.000  /  R 0.000" FontFamily="Consolas" />
-          </StackPanel></GroupBox>
-        </Grid>
-        <TextBlock Text="初回は1台ずつ接続して登録し、左右テストで照合してください。表示は接続・音声供給の状態です。実際の振動を検出するものではありません。補正は正値で遅延、負値で先行します（−500〜＋500ms）。" TextWrapping="Wrap" FontSize="12" Foreground="#586778" />
         <GroupBox Header="展示運用">
           <StackPanel>
             <WrapPanel><CheckBox x:Name="AutoPlay" Content="起動時に自動再生" /><CheckBox x:Name="LoginStartup" Content="Windowsログイン時に起動" /><Button x:Name="SaveButton" Content="設定を保存" Click="OnSave" /><Button Content="診断ログを書き出す…" Click="OnExport" /></WrapPanel>

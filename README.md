@@ -24,6 +24,8 @@ GitがなければMinGitを、必要な.NET SDKがなければ10.0.403をユー�
 
 起動後は下の手順4から、表示先・通常音声・DualSenseの出力先を設定してください。チャンネル確認用など6本の試験動画も `test-media/` に展開されます。
 
+DualSenseの出力先は管理画面の上部で選択します。Windowsプレーヤーで振動した4ch音声デバイスを「DualSense 1」に指定してください。動画ch3/4をDualSense ch3/4へ送り、ch1/2は無音にします。「自動再生用」のch確認前でも手動再生できます。強度は0〜100%で調整でき、HIDを照合できない場合も48kHz・4chの音声出力を手動で指定できます。
+
 Gitで取得済みなら、リポジトリ内の `scripts/Install-Windows.ps1` を実行できます。`-NoLaunch` は導入後の起動を省略する検証用オプションです。
 
 この導入方法はGyanのFFmpeg 7.1.1 essentials（GPLビルド）を利用します。下記ZIP版のFFmpeg 7.1.5最小LGPLビルドとは配布構成が異なります。原本ZIP、ライセンス、ソース入手先を保持します。詳しくは [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
