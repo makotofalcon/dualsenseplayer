@@ -67,6 +67,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Video throughput benchmark failed.' }
           dotnet run --project tools/VideoBenchmark -c Release --no-build --no-restore -- 60
           if ($LASTEXITCODE -ne 0) { throw '60fps video throughput benchmark failed.' }
+      - name: Verify actual WPF frame copies and measure 1080p30 presentation
+        shell: pwsh
+        run: |
+          dotnet restore tools/PresentationCheck --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Presentation check restore failed.' }
+          dotnet run --project tools/PresentationCheck -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'WPF presentation checks failed.' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

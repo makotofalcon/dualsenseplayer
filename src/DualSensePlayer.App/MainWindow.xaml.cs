@@ -19,14 +19,18 @@ public partial class MainWindow : Window
     private readonly DiagnosticLog _log;
     private readonly FfmpegTools _tools = FfmpegTools.Discover();
     private readonly PlayerEngine _engine;
+    private readonly VideoPresentationBuffer _presentation = new();
+    private readonly VideoPerformanceMeter _videoPerformance = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly double _started = PlaybackClock.QpcSeconds;
     private readonly string _heartbeatPath;
     private PlayerSettings _settings;
     private VisitorWindow? _visitor;
-    private bool _updating = true, _busy, _exiting, _allowClose, _recovering, _resumeAfterDisplay, _resumeAfterSleep;
+    private bool _updating = true, _busy, _exiting, _allowClose, _recovering, _resumeAfterDisplay, _resumeAfterSleep, _checkingDisplay;
     private long _uiTick;
-    private double _nextDisplayCheck, _nextRecovery, _nextSettingsSave;
+    private long _presentationGeneration = -1;
+    private TimeSpan _lastRenderingTime = TimeSpan.MinValue;
+    private double _nextDisplayCheck, _nextRecovery, _nextSettingsSave, _nextPerformanceLog;
     private string _preparedKey = "";
     private string _fault = "";
     private bool _seekPending;
@@ -217,21 +221,70 @@ public partial class MainWindow : Window
         Exception? saveError = null;
         try { if (intentional) Persist(_settings, exhibitionStop: true); }
         catch (Exception ex) { saveError = ex; _log.Write("stop-save-error", ex.ToString()); }
-        await _engine.StopAsync(); DisplaySupport.KeepAwake(false);
+        await _engine.StopAsync(); _presentation.Clear(); DisplaySupport.KeepAwake(false);
         _visitor?.Hide(); ShowManagement();
         if (saveError is not null) Warning.Text = "出力は停止しましたが、停止状態の保存に失敗しました: " + saveError.Message;
     }
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        if (_exiting || _recovering || _visitor is null) return;
-        try { using var frame = _engine.TakeDueFrame(); if (frame is not null) _visitor.Present(frame); }
-        catch (Exception ex) { _ = HandleVideoFaultAsync(ex); }
+        ResetPresentationIfChanged(_engine.Clock.Snapshot);
+        if (_exiting || _recovering || _visitor?.IsVisible != true) return;
+        if (e is RenderingEventArgs rendering)
+        {
+            if (rendering.RenderingTime == _lastRenderingTime) return;
+            _lastRenderingTime = rendering.RenderingTime;
+        }
+        try
+        {
+            var frame = _engine.TakeDueFrame();
+            if (frame is not null) _presentation.Offer(frame);
+            if (!_presentation.HasPending) return;
+            var started = Stopwatch.GetTimestamp();
+            var sequence = _presentation.TryPresent(_visitor.TryPresent);
+            if (sequence is { } presented) _videoPerformance.Presented(presented, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            else _videoPerformance.Busy();
+        }
+        catch (Exception ex) { _presentation.Clear(); _ = HandleVideoFaultAsync(ex); }
+    }
+
+    private void ResetPresentationIfChanged(ClockSnapshot snapshot)
+    {
+        if (snapshot.Generation == _presentationGeneration) return;
+        _presentationGeneration = snapshot.Generation;
+        _presentation.Clear();
+        _lastRenderingTime = TimeSpan.MinValue;
+        _videoPerformance.Reset(Math.Max(PlaybackClock.QpcSeconds, snapshot.Epoch));
+        _nextPerformanceLog = PlaybackClock.QpcSeconds + 10;
+    }
+
+    private void RefreshVideoPerformance()
+    {
+        var snapshot = _engine.Clock.Snapshot;
+        ResetPresentationIfChanged(snapshot);
+        if (snapshot.State != PlaybackState.Playing || _engine.CurrentMedia is not { } media)
+        {
+            VideoPerformanceText.Text = "映像fps：再生中に表示";
+            return;
+        }
+        var now = PlaybackClock.QpcSeconds;
+        var measured = _videoPerformance.Measure(now);
+        VideoPerformanceText.Text = measured.Measured
+            ? $"映像 {measured.FramesPerSecond:0.0} / 素材 {media.Info.FrameRate:0.##} fps  ·  スキップ {measured.SkippedFrames}フレーム"
+            : $"映像fpsを計測中 · 素材 {media.Info.FrameRate:0.##} fps";
+        if (now >= _nextPerformanceLog)
+        {
+            _nextPerformanceLog = now + 10;
+            _log.Write("video-performance", new { media.Info.Width, media.Info.Height, sourceFps = media.Info.FrameRate,
+                measured.FramesPerSecond, measured.CopyMilliseconds, measured.SkippedFrames, measured.BusyAttempts,
+                renderTier = RenderCapability.Tier >> 16 });
+        }
     }
 
     private async Task HandleVideoFaultAsync(Exception ex)
     {
         if (_recovering) return;
+        _presentation.Clear();
         _recovering = true; _fault = ex.Message;
         _log.Write("video-fault", ex.ToString());
         try { await _engine.StopAsync(); _visitor?.SetFault(true); DisplaySupport.KeepAwake(false); _nextRecovery = PlaybackClock.QpcSeconds + 5; }
@@ -247,11 +300,14 @@ public partial class MainWindow : Window
         {
             if (_uiTick % 2 == 0) WriteHeartbeat(false);
             if (_nextSettingsSave > 0 && PlaybackClock.QpcSeconds >= _nextSettingsSave) { _nextSettingsSave = 0; _store.Save(_settings); }
-            if (!_busy && !_recovering && PlaybackClock.QpcSeconds >= _nextDisplayCheck)
+            if (!_busy && !_recovering && !_checkingDisplay && PlaybackClock.QpcSeconds >= _nextDisplayCheck)
             {
+                _checkingDisplay = true;
                 _nextDisplayCheck = PlaybackClock.QpcSeconds + 1;
-                await CheckDisplayAsync();
+                try { await CheckDisplayAsync(); }
+                finally { _checkingDisplay = false; }
             }
+            if (_exiting) return;
             if (!_busy && !_recovering && _fault.Length > 0 && PlaybackClock.QpcSeconds >= _nextRecovery && !_settings.ExhibitionStopped)
             {
                 _nextRecovery = PlaybackClock.QpcSeconds + 5;
@@ -276,6 +332,7 @@ public partial class MainWindow : Window
             NowPlayingText.Text = $"{point.Index + 1} / {playlist.Items.Count} 本目  {Path.GetFileName(info.Path)}  ·  動画内 {TimeSpan.FromSeconds(point.LocalSeconds):mm\\:ss} / {TimeSpan.FromSeconds(info.Duration):mm\\:ss}";
         }
         else NowPlayingText.Text = "プレイリストを配置して全動画を検証・先読みしてください";
+        RefreshVideoPerformance();
         PositionSlider.Maximum = duration;
         if (!_seekPending && !PositionSlider.IsMouseCaptureWithin && !PositionSlider.IsKeyboardFocusWithin) PositionSlider.Value = position % duration;
         if (!_busy) Status.Text = _fault.Length > 0 ? _fault : state switch { PlaybackState.Playing => "展示運転中", PlaybackState.Paused => "一時停止中", _ => "停止中 — 素材と機器を設定できます" };
@@ -313,7 +370,9 @@ public partial class MainWindow : Window
 
     private async Task CheckDisplayAsync()
     {
-        var exists = DisplaySupport.Enumerate().Any(d => d.Id == _settings.Machine.MonitorId);
+        var monitorId = _settings.Machine.MonitorId;
+        var exists = await Task.Run(() => DisplaySupport.Enumerate().Any(d => d.Id == monitorId));
+        if (_exiting || _busy || _recovering || monitorId != _settings.Machine.MonitorId) return;
         if (!exists && _engine.Clock.Snapshot.State == PlaybackState.Playing)
         {
             _resumeAfterDisplay = true;
@@ -461,7 +520,7 @@ public partial class MainWindow : Window
         if (_exiting) return;
         ShowManagement();
         if (MessageBox.Show(this, "映像・音声・振動を停止して終了しますか？", "終了確認", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
-        _exiting = true; _timer.Stop(); _operationStop?.Cancel();
+        _exiting = true; _timer.Stop(); _operationStop?.Cancel(); _presentation.Dispose();
         try
         {
             try { Persist(_settings, exhibitionStop: true); }

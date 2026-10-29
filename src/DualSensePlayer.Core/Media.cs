@@ -199,7 +199,10 @@ public sealed class VideoDecoder : IAsyncDisposable
 
     public VideoDecoder(FfmpegTools tools, MediaInfo info, double position)
     {
-        _worker = Task.Run(async () =>
+        // Windows Process stdout is a synchronous anonymous pipe. Async reads of each
+        // small pipe block otherwise repeatedly queue blocking work to the thread pool.
+        // One dedicated reader also keeps video I/O separate from audio/control work.
+        _worker = Task.Factory.StartNew(() =>
         {
             Process? process = null;
             try
@@ -207,10 +210,10 @@ public sealed class VideoDecoder : IAsyncDisposable
                 var index = info.FrameAt(position);
                 var sequence = (long)Math.Floor(position / info.Duration) * info.FrameCount + index;
                 // Accurate timestamp seek, then demuxer looping. No player-local end-of-file clock.
-                process = FfmpegTools.Start(tools.Ffmpeg, ["-v", "error", "-xerror", "-nostdin", "-threads", "4",
+                process = FfmpegTools.Start(tools.Ffmpeg, ["-v", "error", "-xerror", "-nostdin", "-threads", "4", "-filter_threads", "2",
                     "-stream_loop", "-1", "-ss", (info.VideoStart + index / info.FrameRate).ToString("0.#########", CultureInfo.InvariantCulture),
                     "-seek_timestamp", "1", "-noautorotate", "-i", info.Path, "-map", "0:v:0", "-an", "-sn", "-dn",
-                    "-fps_mode", "passthrough", "-pix_fmt", "bgra", "-f", "rawvideo", "pipe:1"]);
+                    "-fps_mode", "passthrough", "-pix_fmt", "bgra", "-threads", "1", "-f", "rawvideo", "pipe:1"]);
                 using var cancel = _stop.Token.Register(() => FfmpegTools.Kill(process));
                 var errors = process.StandardError.ReadToEndAsync();
                 var frameBytes = checked(info.Width * info.Height * 4);
@@ -218,14 +221,15 @@ public sealed class VideoDecoder : IAsyncDisposable
                 while (!_stop.IsCancellationRequested)
                 {
                     var pixels = ArrayPool<byte>.Shared.Rent(frameBytes);
-                    try { await process.StandardOutput.BaseStream.ReadExactlyAsync(pixels.AsMemory(0, frameBytes), _stop.Token); }
+                    // Cancellation kills FFmpeg and closes the pipe, unblocking ReadExactly.
+                    try { process.StandardOutput.BaseStream.ReadExactly(pixels.AsSpan(0, frameBytes)); }
                     catch { ArrayPool<byte>.Shared.Return(pixels); throw; }
                     var frame = new VideoFrame(sequence++, pixels, frameBytes, info.Width, info.Height);
-                    try { await _frames.Writer.WriteAsync(frame, _stop.Token); }
+                    try { _frames.Writer.WriteAsync(frame, _stop.Token).AsTask().GetAwaiter().GetResult(); }
                     catch { frame.Dispose(); throw; }
                     if (++prepared >= 3) _ready.TrySetResult();
                 }
-                await errors;
+                errors.GetAwaiter().GetResult();
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
             catch (Exception ex)
@@ -238,7 +242,7 @@ public sealed class VideoDecoder : IAsyncDisposable
                 _ready.TrySetCanceled();
                 _frames.Writer.TryComplete();
             }
-        });
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
     public async ValueTask DisposeAsync()

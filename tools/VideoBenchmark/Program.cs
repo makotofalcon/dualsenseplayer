@@ -42,6 +42,8 @@ try
         decodedFps = Math.Round(fps, 2), elapsedSeconds = Math.Round(elapsed.Elapsed.TotalSeconds, 3),
         processors = Environment.ProcessorCount, os = Environment.OSVersion.ToString() };
     Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+    if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+        Console.WriteLine($"::notice title=1080p{sourceFps} decoder throughput::{fps.ToString("0.00", CultureInfo.InvariantCulture)} frames/s (no display or controller)");
     var summary = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY");
     if (!string.IsNullOrEmpty(summary))
         await File.AppendAllTextAsync(summary, "\n### Video decoder throughput (no display or controller)\n\n" +

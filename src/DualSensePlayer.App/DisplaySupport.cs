@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -70,16 +71,31 @@ public sealed class VisitorWindow : Window
         _bitmap = new(media.Width, media.Height, 96, 96, PixelFormats.Bgra32, null);
         _image.Source = _bitmap; _notice.Visibility = Visibility.Collapsed;
     }
-    public void Present(VideoFrame frame)
+    public bool TryPresent(VideoFrame frame)
     {
         if (frame.Width > 0 && frame.Height > 0 && (_bitmap?.PixelWidth != frame.Width || _bitmap.PixelHeight != frame.Height))
         {
             _bitmap = new(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null);
             _image.Source = _bitmap;
         }
-        if (_bitmap is null) return;
-        _bitmap.WritePixels(new Int32Rect(0, 0, _bitmap.PixelWidth, _bitmap.PixelHeight), frame.Pixels, _bitmap.PixelWidth * 4, 0);
+        if (_bitmap is null) return false;
+        var stride = checked(_bitmap.PixelWidth * 4);
+        if (frame.Length != checked(stride * _bitmap.PixelHeight)) throw new InvalidDataException("映像フレームの大きさが一致しません。");
+        // WritePixels waits for the compositor's previous copy while holding the UI
+        // thread. Retry next rendering event instead, keeping the latest due frame.
+        if (!_bitmap.TryLock(new Duration(TimeSpan.Zero))) return false;
+        try
+        {
+            if (_bitmap.BackBufferStride == stride)
+                Marshal.Copy(frame.Pixels, 0, _bitmap.BackBuffer, frame.Length);
+            else
+                for (var row = 0; row < _bitmap.PixelHeight; row++)
+                    Marshal.Copy(frame.Pixels, row * stride, _bitmap.BackBuffer + row * _bitmap.BackBufferStride, stride);
+            _bitmap.AddDirtyRect(new Int32Rect(0, 0, _bitmap.PixelWidth, _bitmap.PixelHeight));
+        }
+        finally { _bitmap.Unlock(); }
         _notice.Visibility = Visibility.Collapsed;
+        return true;
     }
     public void SetFault(bool fault) { _notice.Visibility = fault ? Visibility.Visible : Visibility.Collapsed; _image.Visibility = fault ? Visibility.Hidden : Visibility.Visible; }
 }

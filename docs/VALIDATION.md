@@ -17,6 +17,8 @@
 
 Windows CIでは `scripts/Test-WindowsControls.ps1` で実際のXAMLと共通スタイルを読み込み、強度・音量の0〜100%操作と、スクロールせずコントローラーの選択欄が見えることを検査します。プレーヤーやUSB機器は起動しません。
 
+映像処理のテストでは、描画側が使用中のときの再試行、古いフレームの解放、シーク時の保留破棄、fps・スキップ数の集計を検証します。`tools/VideoBenchmark` は1920×1080の30fps/60fps素材を生成し、プレイリスト経由で240フレームを間引き・縮小なしでデコードして速度を記録します。`tools/PresentationCheck` はWindowsで実際の来場者画面の描画コードを使用し、サイズ変更時もBGRA画素が一致することと、1080p30の描画への受け渡し速度を検証・計測します。CIのデスクトップでの計測は展示PCのGPU・ディスプレイ・USB機器を使った再生性能を保証するものではありません。
+
 最新の件数・実行結果は `artifacts/validation.txt`（配布フォルダーでは `validation.txt`）に記録します。配布用FFmpegと同じ機能構成をLinuxでもビルドし、デコードテストへ使用した結果は `validation-minimal-decoder.txt` に記録します。配布用のWindows EXEはクロスビルド品です。このLinux環境ではWindows GUIと実機の入出力を実行していません。
 
 ## 展示機材で実施する項目

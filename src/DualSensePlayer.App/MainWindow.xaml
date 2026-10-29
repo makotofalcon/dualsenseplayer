@@ -11,6 +11,7 @@
         <Button Content="管理画面を隠す" Click="OnHide" />
       </WrapPanel>
       <TextBlock x:Name="NowPlayingText" Text="プレイリストに動画を追加してください" Margin="0,5" TextWrapping="Wrap" />
+      <TextBlock x:Name="VideoPerformanceText" Text="映像fps：再生中に表示" FontSize="12" Foreground="#586778" ToolTip="アプリが描画へ渡したフレーム数を計測します。ディスプレイの物理的な表示回数ではありません。" />
       <DockPanel><TextBlock x:Name="PositionText" DockPanel.Dock="Right" Width="220" VerticalAlignment="Center" /><Button Content="この位置へシーク" DockPanel.Dock="Right" Click="OnSeek" /><Slider x:Name="PositionSlider" Maximum="1" TickFrequency="0.01" IsSnapToTickEnabled="False" PreviewMouseLeftButtonDown="OnSeekSelection" PreviewKeyDown="OnSeekKey" /></DockPanel>
     </StackPanel>
     <StackPanel DockPanel.Dock="Bottom">
