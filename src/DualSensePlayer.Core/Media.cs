@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 
@@ -129,7 +130,9 @@ public sealed class FfmpegTools(string ffmpeg, string ffprobe)
     internal static Process Start(string executable, IEnumerable<string> arguments)
     {
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardOutput = true, RedirectStandardError = true };
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            // FFmpeg writes UTF-8 even when Windows uses a legacy console code page.
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         try { return Process.Start(start) ?? throw new IOException($"{executable}を起動できません。"); }
         catch (System.ComponentModel.Win32Exception ex) { throw new IOException("FFmpeg/ffprobeが見つかりません。配布パッケージのtools/ffmpegを確認してください。", ex); }
