@@ -28,6 +28,14 @@ Gitで取得済みなら、リポジトリ内の `scripts/Install-Windows.ps1` �
 
 この導入方法はGyanのFFmpeg 7.1.1 essentials（GPLビルド）を利用します。下記ZIP版のFFmpeg 7.1.5最小LGPLビルドとは配布構成が異なります。原本ZIP、ライセンス、ソース入手先を保持します。詳しくは [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
 
+## 次回からの起動
+
+デスクトップの **DualSense Player** をダブルクリックし、アプリで「再生 / 再開」を押してください。保存した動画の一覧・再生順・機器設定を使えます。通常の起動にインターネット接続やインストールコードの再実行は不要です。
+
+ショートカットを消した場合は `scripts/Create-Launcher.ps1` で作り直せます。前回のインストール先から、起動に必要なファイルがそろった最新のフォルダーを探し、デスクトップに `DualSense Player.lnk` を作成します。アプリの追加インストールや設定の変更は行いません。
+
+直接起動する場合は `%LOCALAPPDATA%\DualSensePlayer\install-日時-識別子\app\DualSensePlayer.Supervisor.exe` を使ってください。正常終了後は停止状態を保持するため、起動後に「再生 / 再開」を押します。振動全停止を設定していた場合は、必要に応じて明示的に解除してください。
+
 ## ビルド済みZIPで起動
 
 1. `artifacts/DualSensePlayer-win-x64.zip` をWindows PCへコピーし、フォルダー全体を展開します。

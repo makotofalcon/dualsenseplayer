@@ -102,14 +102,10 @@ try {
 
     $exe = Join-Path $output 'DualSensePlayer.Supervisor.exe'
     $desktop = [Environment]::GetFolderPath('DesktopDirectory')
-    if ($desktop -and (Test-Path -LiteralPath $desktop)) {
+    if ($desktop) {
         try {
-            $shell = New-Object -ComObject WScript.Shell
-            $shortcut = $shell.CreateShortcut((Join-Path $desktop 'DualSense Player.lnk'))
-            $shortcut.TargetPath = $exe
-            $shortcut.WorkingDirectory = $output
-            $shortcut.IconLocation = Join-Path $output 'DualSensePlayer.exe'
-            $shortcut.Save()
+            $launcherScript = [IO.File]::ReadAllText((Join-Path $SourceRoot 'scripts/Create-Launcher.ps1'), [Text.Encoding]::UTF8)
+            & ([scriptblock]::Create($launcherScript)) -AppDirectory $output -DesktopDirectory $desktop
         } catch { Write-Warning ('ショートカットを作れませんでした。次の場所から起動できます: ' + $exe) }
     }
     Write-Host ('セットアップ完了: ' + $output) -ForegroundColor Green

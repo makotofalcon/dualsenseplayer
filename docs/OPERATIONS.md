@@ -1,5 +1,11 @@
 # スタッフ操作手順
 
+## 2回目以降の起動
+
+デスクトップの「DualSense Player」をダブルクリックします。コントローラーと表示先を接続し、アプリで「再生 / 再開」を押してください。保存された動画の一覧と機器設定を読み込み、一覧の先頭から再生します。インストール用のPowerShellコードを再実行する必要はありません。
+
+起動用ファイルは `DualSense Player.lnk` です。削除した場合は `scripts/Create-Launcher.ps1` で作り直せます。直接起動する場合は、導入先の `app` フォルダーにある `DualSensePlayer.Supervisor.exe` を使います。
+
 ## 接続
 
 ```mermaid
