@@ -52,6 +52,8 @@ public sealed class VisitorWindow : Window
     private readonly DispatcherTimer _cursorTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private double _lastMouse = PlaybackClock.QpcSeconds;
     private WriteableBitmap? _bitmap;
+    private WriteableBitmap[] _surfaces = [];
+    private int _nextSurface;
     public bool AllowClose { get; set; }
     public VisitorWindow(Action<KeyEventArgs> shortcut, Action requestQuit)
     {
@@ -68,32 +70,46 @@ public sealed class VisitorWindow : Window
     public void Configure(MediaInfo media, bool clear = true)
     {
         if (!clear && _bitmap?.PixelWidth == media.Width && _bitmap.PixelHeight == media.Height) return;
-        _bitmap = new(media.Width, media.Height, 96, 96, PixelFormats.Bgra32, null);
-        _image.Source = _bitmap; _notice.Visibility = Visibility.Collapsed;
+        ConfigureSurfaces(media.Width, media.Height);
+        _notice.Visibility = Visibility.Collapsed;
+    }
+    private void ConfigureSurfaces(int width, int height)
+    {
+        // Allow the compositor to copy earlier frames while the UI fills another
+        // surface. Reusing only one bitmap can halve throughput even with TryLock.
+        _surfaces = Enumerable.Range(0, 3).Select(_ => new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null)).ToArray();
+        _bitmap = _surfaces[0]; _nextSurface = 1;
+        _image.Source = _bitmap;
     }
     public bool TryPresent(VideoFrame frame)
     {
         if (frame.Width > 0 && frame.Height > 0 && (_bitmap?.PixelWidth != frame.Width || _bitmap.PixelHeight != frame.Height))
-        {
-            _bitmap = new(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null);
-            _image.Source = _bitmap;
-        }
+            ConfigureSurfaces(frame.Width, frame.Height);
         if (_bitmap is null) return false;
         var stride = checked(_bitmap.PixelWidth * 4);
         if (frame.Length != checked(stride * _bitmap.PixelHeight)) throw new InvalidDataException("映像フレームの大きさが一致しません。");
-        // WritePixels waits for the compositor's previous copy while holding the UI
-        // thread. Retry next rendering event instead, keeping the latest due frame.
-        if (!_bitmap.TryLock(new Duration(TimeSpan.Zero))) return false;
+        WriteableBitmap? available = null;
+        for (var attempt = 0; attempt < _surfaces.Length; attempt++)
+        {
+            var index = (_nextSurface + attempt) % _surfaces.Length;
+            if (!_surfaces[index].TryLock(new Duration(TimeSpan.Zero))) continue;
+            available = _surfaces[index]; _nextSurface = (index + 1) % _surfaces.Length;
+            break;
+        }
+        // If all surfaces are still in use, keep the latest due frame for a retry.
+        if (available is null) return false;
         try
         {
-            if (_bitmap.BackBufferStride == stride)
-                Marshal.Copy(frame.Pixels, 0, _bitmap.BackBuffer, frame.Length);
+            if (available.BackBufferStride == stride)
+                Marshal.Copy(frame.Pixels, 0, available.BackBuffer, frame.Length);
             else
-                for (var row = 0; row < _bitmap.PixelHeight; row++)
-                    Marshal.Copy(frame.Pixels, row * stride, _bitmap.BackBuffer + row * _bitmap.BackBufferStride, stride);
-            _bitmap.AddDirtyRect(new Int32Rect(0, 0, _bitmap.PixelWidth, _bitmap.PixelHeight));
+                for (var row = 0; row < available.PixelHeight; row++)
+                    Marshal.Copy(frame.Pixels, row * stride, available.BackBuffer + row * available.BackBufferStride, stride);
+            available.AddDirtyRect(new Int32Rect(0, 0, available.PixelWidth, available.PixelHeight));
         }
-        finally { _bitmap.Unlock(); }
+        finally { available.Unlock(); }
+        _bitmap = available;
+        _image.Source = _bitmap;
         _notice.Visibility = Visibility.Collapsed;
         return true;
     }

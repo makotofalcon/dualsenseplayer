@@ -51,8 +51,9 @@ internal static class Program
         {
             // Exercise the actual visitor renderer, including odd widths and playlist size changes.
             foreach (var size in new[] { (3, 2), (1920, 1080), (96, 64) })
+            for (var index = 0; index < 7; index++)
             {
-                using var frame = Frame(0, size.Item1, size.Item2);
+                using var frame = Frame(index, size.Item1, size.Item2);
                 if (!window.TryPresent(frame)) throw new InvalidOperationException("An unattached bitmap was unexpectedly busy.");
                 var bitmap = (WriteableBitmap)((Image)((Grid)window.Content).Children[0]).Source;
                 var pixels = new byte[frame.Length];
@@ -80,7 +81,7 @@ internal static class Program
         var pixels = ArrayPool<byte>.Shared.Rent(length);
         pixels.AsSpan(0, length).Fill(255);
         // Include distinct channel values and opaque alpha to catch stride or pixel-format errors.
-        pixels[0] = 10; pixels[1] = 20; pixels[2] = 30;
+        pixels[0] = (byte)sequence; pixels[1] = 20; pixels[2] = 30;
         pixels[length - 4] = 40; pixels[length - 3] = 50; pixels[length - 2] = 60;
         return new(sequence, pixels, length, width, height);
     }
