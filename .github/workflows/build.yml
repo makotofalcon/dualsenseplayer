@@ -61,6 +61,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Test restore failed.' }
           dotnet test tests/DualSensePlayer.Tests -c Release --no-restore --logger trx
           if ($LASTEXITCODE -ne 0) { throw 'Windows tests failed.' }
+          dotnet restore tools/VideoBenchmark --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark restore failed.' }
+          dotnet run --project tools/VideoBenchmark -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Video throughput benchmark failed.' }
+          dotnet run --project tools/VideoBenchmark -c Release --no-build --no-restore -- 60
+          if ($LASTEXITCODE -ne 0) { throw '60fps video throughput benchmark failed.' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
