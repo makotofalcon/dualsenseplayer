@@ -1,0 +1,50 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Install development FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - run: dotnet restore DualSensePlayer.sln --locked-mode
+      - run: dotnet build DualSensePlayer.sln -c Release --no-restore
+      - run: dotnet test tests/DualSensePlayer.Tests -c Release --no-build --no-restore --logger trx
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: '**/TestResults/*.trx'
+  windows-install:
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install through Git without launching the hardware application
+        shell: pwsh
+        run: |
+          # Exercise the portable Git path even when the runner includes Git.
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch '(?i)[\\/]Git[\\/]' }) -join ';'
+          & ./scripts/Install-FromGitHub.ps1 -Revision $env:GITHUB_SHA -NoLaunch
+          $base = Join-Path $env:LOCALAPPDATA 'DualSensePlayer'
+          $installation = Get-ChildItem $base -Directory -Filter 'install-*' | Sort-Object Name -Descending | Select-Object -First 1
+          $app = Join-Path $installation.FullName 'app'
+          foreach ($file in @('DualSensePlayer.exe', 'DualSensePlayer.Supervisor.exe', 'tools/ffmpeg/ffmpeg.exe', 'tools/ffmpeg/ffprobe.exe')) {
+            if (-not (Test-Path (Join-Path $app $file))) { throw "Missing installed file: $file" }
+          }
+          if (@(Get-ChildItem (Join-Path $app 'test-media') -File).Count -ne 6) { throw 'Expected six test videos.' }
+          & (Join-Path $app 'tools/ffmpeg/ffprobe.exe') -version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed ffprobe failed to start.' }

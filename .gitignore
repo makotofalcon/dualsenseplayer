@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.vs/
+artifacts/
+TestResults/
+tools/ffmpeg/
+*.user
+*.suo
+.DS_Store
+__pycache__/
+*.pyc

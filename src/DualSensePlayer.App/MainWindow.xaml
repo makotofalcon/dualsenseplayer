@@ -1,0 +1,99 @@
+<Window x:Class="DualSensePlayer.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="DualSense 展示プレーヤー — 管理画面" Width="1040" Height="860" MinWidth="800" MinHeight="600" PreviewKeyDown="OnKeyDown" Closing="OnClosing">
+  <DockPanel Margin="22">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="DualSense 展示プレーヤー" FontSize="26" FontWeight="SemiBold" Foreground="#172D49" />
+      <TextBlock x:Name="Status" Text="設定を読み込んでいます" Margin="0,8" TextWrapping="Wrap" Foreground="#254F76" />
+      <WrapPanel>
+        <Button x:Name="PlayButton" Content="▶ 再生 / 再開" Click="OnPlay" />
+        <Button Content="一時停止" Click="OnPause" />
+        <Button Content="停止" Click="OnStop" />
+        <Button Content="先頭から再生" Click="OnRestart" />
+        <Button Content="管理画面を隠す" Click="OnHide" />
+      </WrapPanel>
+      <TextBlock x:Name="NowPlayingText" Text="プレイリストに動画を追加してください" Margin="0,5" TextWrapping="Wrap" />
+      <DockPanel><TextBlock x:Name="PositionText" DockPanel.Dock="Right" Width="220" VerticalAlignment="Center" /><Button Content="この位置へシーク" DockPanel.Dock="Right" Click="OnSeek" /><Slider x:Name="PositionSlider" Maximum="1" TickFrequency="0.01" IsSnapToTickEnabled="False" PreviewMouseLeftButtonDown="OnSeekSelection" PreviewKeyDown="OnSeekKey" /></DockPanel>
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom">
+      <TextBlock x:Name="Warning" Foreground="#A13127" TextWrapping="Wrap" Margin="0,5" />
+      <WrapPanel>
+        <Button x:Name="HapticsStopButton" Content="振動全停止" Background="#B62332" Foreground="White" FontWeight="Bold" Click="OnHapticsStop" />
+        <Button Content="振動全停止を解除" Click="OnReleaseHaptics" />
+        <Button Content="展示全停止" Click="OnStop" />
+        <Button Content="終了…" Click="OnQuit" />
+      </WrapPanel>
+      <TextBlock Text="Ctrl+Shift+M 管理画面  ·  Ctrl+Shift+H 振動全停止  ·  Ctrl+Shift+Q 終了" FontSize="12" Foreground="#586778" />
+    </StackPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <GroupBox Header="プレイリスト — 上から順に再生し、最後から先頭へ戻ります">
+          <StackPanel>
+            <WrapPanel>
+              <Button x:Name="BrowseButton" Content="動画を追加…" Click="OnBrowse" />
+              <Button x:Name="FolderButton" Content="フォルダーを追加…" Click="OnAddFolder" />
+              <Button x:Name="MoveUpButton" Content="↑ 上へ" Click="OnMoveUp" />
+              <Button x:Name="MoveDownButton" Content="↓ 下へ" Click="OnMoveDown" />
+              <Button x:Name="RemoveButton" Content="一覧から削除" Click="OnRemoveItem" />
+            </WrapPanel>
+            <ListBox x:Name="PlaylistList" Height="132" DisplayMemberPath="Label" AllowDrop="True" SelectionChanged="OnPlaylistSelectionChanged" DragOver="OnPlaylistDragOver" Drop="OnPlaylistDrop" />
+            <TextBlock Text="動画やフォルダーを一覧にドラッグ＆ドロップして追加できます。" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" />
+            <TextBlock x:Name="PlaylistSummary" Text="MOV / MP4を複数選択、またはここへドラッグ＆ドロップできます。" TextWrapping="Wrap" FontSize="12" Margin="0,6" />
+            <WrapPanel>
+              <Button x:Name="PrepareButton" Content="全動画を検証・先読み" Click="OnPrepare" />
+              <Button x:Name="PlaySelectedButton" Content="選択した動画から再生" Click="OnPlaySelected" />
+            </WrapPanel>
+          </StackPanel>
+        </GroupBox>
+        <GroupBox Header="選択した動画の4ch設定">
+          <StackPanel>
+            <TextBlock x:Name="MediaPath" Text="一覧から動画を選択してください" TextWrapping="Wrap" />
+            <TextBlock x:Name="MediaDescription" TextWrapping="Wrap" />
+            <ComboBox x:Name="TrackCombo" SelectionChanged="OnTrackChanged" />
+            <TextBlock x:Name="TrackDescription" TextWrapping="Wrap" Foreground="#586778" />
+            <WrapPanel x:Name="MappingPanel">
+              <TextBlock Text="通常L ←" VerticalAlignment="Center" /><ComboBox x:Name="Map1" Width="55" SelectionChanged="OnMapChanged" />
+              <TextBlock Text="通常R ←" VerticalAlignment="Center" /><ComboBox x:Name="Map2" Width="55" SelectionChanged="OnMapChanged" />
+              <TextBlock Text="振動L ←" VerticalAlignment="Center" /><ComboBox x:Name="Map3" Width="55" SelectionChanged="OnMapChanged" />
+              <TextBlock Text="振動R ←" VerticalAlignment="Center" /><ComboBox x:Name="Map4" Width="55" SelectionChanged="OnMapChanged" />
+            </WrapPanel>
+            <CheckBox x:Name="MappingConfirmed" Content="4ch試験動画で実際のチャンネル順を確認済み" />
+            <TextBlock x:Name="ValidationText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
+          </StackPanel>
+        </GroupBox>
+        <GroupBox Header="映像と通常音声">
+          <StackPanel>
+            <DockPanel><Button x:Name="RefreshButton" Content="機器を再検出" DockPanel.Dock="Right" Click="OnRefresh" /><ComboBox x:Name="MonitorCombo" /></DockPanel>
+            <ComboBox x:Name="AudioCombo" />
+            <WrapPanel><TextBlock Text="音量" VerticalAlignment="Center" /><Slider x:Name="Volume" Width="220" ValueChanged="OnLiveChanged" /><CheckBox x:Name="AudioMute" Content="ミュート" Click="OnLiveChanged" /><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="AudioOffset" Width="65" Text="0" /><CheckBox x:Name="AudioExclusive" Content="排他" /></WrapPanel>
+            <TextBlock x:Name="AudioStatus" TextWrapping="Wrap" FontSize="12" />
+          </StackPanel>
+        </GroupBox>
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <GroupBox Header="DualSense 1" Margin="0,8,8,8"><StackPanel>
+            <ComboBox x:Name="Controller1" />
+            <WrapPanel><TextBlock Text="強度 %" VerticalAlignment="Center" /><Slider x:Name="Gain1" Width="170" Value="25" ValueChanged="OnLiveChanged" /><CheckBox x:Name="Mute1" Content="ミュート" Click="OnLiveChanged" /></WrapPanel>
+            <WrapPanel><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="Offset1" Width="65" Text="0" /><CheckBox x:Name="Exclusive1" Content="排他" /></WrapPanel>
+            <WrapPanel><Button x:Name="Test1L" Content="左テスト" Tag="0L" Click="OnTest" /><Button x:Name="Test1R" Content="右テスト" Tag="0R" Click="OnTest" /></WrapPanel>
+            <TextBlock x:Name="ControllerStatus1" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock x:Name="Meter1" Text="L 0.000  /  R 0.000" FontFamily="Consolas" />
+          </StackPanel></GroupBox>
+          <GroupBox Grid.Column="1" Header="DualSense 2" Margin="8,8,0,8"><StackPanel>
+            <ComboBox x:Name="Controller2" />
+            <WrapPanel><TextBlock Text="強度 %" VerticalAlignment="Center" /><Slider x:Name="Gain2" Width="170" Value="25" ValueChanged="OnLiveChanged" /><CheckBox x:Name="Mute2" Content="ミュート" Click="OnLiveChanged" /></WrapPanel>
+            <WrapPanel><TextBlock Text="補正 ms" VerticalAlignment="Center" /><TextBox x:Name="Offset2" Width="65" Text="0" /><CheckBox x:Name="Exclusive2" Content="排他" /></WrapPanel>
+            <WrapPanel><Button x:Name="Test2L" Content="左テスト" Tag="1L" Click="OnTest" /><Button x:Name="Test2R" Content="右テスト" Tag="1R" Click="OnTest" /></WrapPanel>
+            <TextBlock x:Name="ControllerStatus2" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock x:Name="Meter2" Text="L 0.000  /  R 0.000" FontFamily="Consolas" />
+          </StackPanel></GroupBox>
+        </Grid>
+        <TextBlock Text="初回は1台ずつ接続して登録し、左右テストで照合してください。表示は接続・音声供給の状態です。実際の振動を検出するものではありません。補正は正値で遅延、負値で先行します（−500〜＋500ms）。" TextWrapping="Wrap" FontSize="12" Foreground="#586778" />
+        <GroupBox Header="展示運用">
+          <StackPanel>
+            <WrapPanel><CheckBox x:Name="AutoPlay" Content="起動時に自動再生" /><CheckBox x:Name="LoginStartup" Content="Windowsログイン時に起動" /><Button x:Name="SaveButton" Content="設定を保存" Click="OnSave" /><Button Content="診断ログを書き出す…" Click="OnExport" /></WrapPanel>
+            <TextBlock x:Name="OperationStatus" TextWrapping="Wrap" />
+          </StackPanel>
+        </GroupBox>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>
